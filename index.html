@@ -3,9 +3,181 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Static Webpage</title>
+    <title>Weight Calculator</title>
+    <style>
+        body { font-family: sans-serif; line-height: 1.6; }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+        }
+        .main-content {
+            flex: 2; /* Takes up 2/3 of the space */
+            min-width: 300px;
+        }
+        .sidebar {
+            flex: 1; /* Takes up 1/3 of the space */
+            min-width: 250px;
+            padding: 1rem;
+            background-color: #f4f4f4;
+            border-radius: 8px;
+        }
+    </style>
 </head>
 <body>
-    <h1>Hello World</h1>
+    <div class="container">
+        <div class="main-content">
+            <h1>Bench Press Weight Calculator</h1>
+            <label for="maxWeight">Enter your 1-rep max (in lbs):</label>
+            <input type="number" id="maxWeight" placeholder="e.g., 100">
+            <button onclick="calculateWeights()">Calculate</button>
+            <div id="results"><!-- Calculator results will be injected here by the script --></div>
+        </div>
+        <div class="sidebar">
+            <h2>Quick Converters</h2>
+            <label for="lbsInput">Pounds to Kilograms:</label>
+            <input type="number" id="lbsInput" placeholder="Enter lbs"> <button id="convertLbsBtn">Convert</button> &rarr; <span id="kgOutput" style="font-weight: bold;">...</span>
+            <br><br>
+            <label for="kgInput">Kilograms to Pounds:</label>
+            <input type="number" id="kgInput" placeholder="Enter kg"> <button id="convertKgBtn">Convert</button> &rarr; <span id="lbsOutput" style="font-weight: bold;">...</span>
+        </div>
+    </div>
+
+    <script>
+    // --- Constants ---
+    const BARBELL_WEIGHT = 45;
+    const LBS_TO_KG = 0.453592;
+    const PLATES = [45, 25, 10, 5, 2.5];
+
+    /**
+     * Calculates the plate combination for one side of the barbell to get as close
+     * as possible to (but not under) the target weight.
+     * @param {number} targetWeight The total desired weight on the bar.
+     * @returns {object} An object containing the calculated total weight and the plates for one side.
+     */
+    function calculatePlateMath(targetWeight) {
+        if (targetWeight <= BARBELL_WEIGHT) {
+            return { finalWeight: BARBELL_WEIGHT, platesPerSide: [] };
+        }
+
+        const weightNeededPerSide = (targetWeight - BARBELL_WEIGHT) / 2.0;
+        if (weightNeededPerSide <= 0) {
+            return { finalWeight: BARBELL_WEIGHT, platesPerSide: [] };
+        }
+
+        // Helper to calculate plates for a given side weight
+        const getPlatesForSide = (sideWeight) => {
+            let remaining = sideWeight;
+            const plates = [];
+            for (const p of PLATES) {
+                const count = Math.floor(remaining / p);
+                if (count > 0) {
+                    for (let i = 0; i < count; i++) {
+                        plates.push(p);
+                    }
+                    remaining -= count * p;
+                }
+            }
+            return plates;
+        };
+
+        // Calculate the combination for the weight rounded down to the nearest 2.5 lbs
+        const roundedDownSideWeight = Math.floor(weightNeededPerSide / 2.5) * 2.5;
+        const platesForLower = getPlatesForSide(roundedDownSideWeight);
+        const lowerWeight = BARBELL_WEIGHT + 2 * platesForLower.reduce((a, b) => a + b, 0);
+
+        // If the lower weight is already at or above the target, use it
+        if (lowerWeight >= targetWeight) {
+            return { finalWeight: lowerWeight, platesPerSide: platesForLower.sort((a, b) => b - a) };
+        }
+
+        // Otherwise, calculate the next highest possible weight (by adding 2.5 lbs to one side)
+        const roundedUpSideWeight = roundedDownSideWeight + 2.5;
+        const platesPerSide = getPlatesForSide(roundedUpSideWeight);
+        const finalWeight = BARBELL_WEIGHT + 2 * roundedUpSideWeight;
+
+        // Sort plates for easier reading (e.g., [45, 25, 2.5])
+        platesPerSide.sort((a, b) => b - a);
+
+        return { finalWeight, platesPerSide };
+    }
+
+    function calculateWeights() {
+        // 1. Get the input value from the text box
+        const maxWeightInput = document.getElementById('maxWeight');
+        const maxWeight = parseFloat(maxWeightInput.value);
+
+        // 2. Find the element where we will display the results
+        const resultsDiv = document.getElementById('results');
+
+        // 3. Validate the input
+        if (isNaN(maxWeight) || maxWeight <= 0) {
+            resultsDiv.innerHTML = '<p style="color: red;">Please enter a valid, positive number.</p>';
+            return;
+        }
+
+        // 4. Calculate and build the HTML output
+        let outputHtml = '';
+
+        // First, show the plate breakdown for the 1-rep max itself
+        const maxBreakdown = calculatePlateMath(maxWeight);
+        const maxWeightKg = lbsToKg(maxBreakdown.finalWeight).toFixed(1);
+        const maxPlatesString = maxBreakdown.platesPerSide.length > 0 ? maxBreakdown.platesPerSide.join(' lbs, ') + ' lbs' : 'Just the bar';
+        outputHtml += `<h2>Your 1-Rep Max (${maxWeight} lbs / ${lbsToKg(maxWeight).toFixed(1)} kg)</h2>`;
+        outputHtml += `<p>Load to <b>${maxBreakdown.finalWeight} lbs / ${maxWeightKg} kg</b>. Plates per side: ${maxPlatesString}</p>`;
+
+        // Then, show the working sets
+        outputHtml += '<h2>Your Working Sets:</h2><ul>';
+        const percentages = [95, 90, 85, 80, 75, 70, 65, 60, 55, 50];
+
+        for (const percent of percentages) {
+            const targetWeight = maxWeight * (percent / 100);
+            const targetWeightKg = lbsToKg(targetWeight).toFixed(1);
+            const { finalWeight, platesPerSide } = calculatePlateMath(targetWeight);
+            const finalWeightKg = lbsToKg(finalWeight).toFixed(1);
+            const platesString = platesPerSide.length > 0 ? platesPerSide.join(' lbs, ') + ' lbs' : 'Just the bar';
+            outputHtml += `<li><b>${percent}% (${targetWeight.toFixed(1)} lbs / ${targetWeightKg} kg):</b><br>Load to <b>${finalWeight} lbs / ${finalWeightKg} kg</b>. Plates per side: ${platesString}</li>`;
+        }
+        outputHtml += '</ul>';
+        // 5. Display the results on the page
+        resultsDiv.innerHTML = outputHtml;
+    }
+
+    /**
+     * Converts a weight from pounds to kilograms.
+     * @param {number} lbs The weight in pounds.
+     * @returns {number} The weight in kilograms.
+     */
+    function lbsToKg(lbs) {
+        return lbs * LBS_TO_KG;
+    }
+
+    /**
+     * Converts a weight from kilograms to pounds.
+     * @param {number} kg The weight in kilograms.
+     * @returns {number} The weight in pounds.
+     */
+    function kgToLbs(kg) {
+        return kg / LBS_TO_KG;
+    }
+
+    // --- Setup for Standalone Converters ---
+    // This ensures the script waits until the full HTML page is loaded before running.
+    document.addEventListener('DOMContentLoaded', () => {
+        // Pounds to Kilograms Converter
+        document.getElementById('convertLbsBtn').addEventListener('click', () => {
+            const lbsValue = parseFloat(document.getElementById('lbsInput').value);
+            const kgOutputSpan = document.getElementById('kgOutput');
+            kgOutputSpan.textContent = isNaN(lbsValue) ? 'Invalid input' : `${lbsToKg(lbsValue).toFixed(2)} kg`;
+        });
+
+        // Kilograms to Pounds Converter
+        document.getElementById('convertKgBtn').addEventListener('click', () => {
+            const kgValue = parseFloat(document.getElementById('kgInput').value);
+            const lbsOutputSpan = document.getElementById('lbsOutput');
+            lbsOutputSpan.textContent = isNaN(kgValue) ? 'Invalid input' : `${kgToLbs(kgValue).toFixed(2)} lbs`;
+        });
+    });
+    </script>
 </body>
 </html>
